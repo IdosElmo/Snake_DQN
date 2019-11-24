@@ -2,28 +2,21 @@ import tensorflow as tf
 import random
 import numpy as np
 import time
-from Environment import TradingEnv
+import Environment as Env
 from Agent import Agent, Memory, update_target_graph
 
-# MAKE TRADING ENVIRONMENT
-filename = 'EURUSD_PERIOD_M5'
-url = "C://Users/Idos Elmo/PycharmProjects/MAIN/External/" + filename + ".csv"
-
-lot_size = 0.2
-env = TradingEnv(file=filename, lot_size=lot_size)
-
 # MODEL HYPERPARAMETERS
-K = env.OBSERVATION_SPACE
-num_actions = env.ACTION_SPACE
+K = 25
+num_actions = 4
 
 state_size = [K, K, 1]  # Our input is a stack of 4 frames hence 100x120x4 (Width, height, channels)
 action_size = num_actions  # 4 possible actions
-one_hot_actions = [[1, 0], [0, 1]]
+one_hot_actions = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
 learning_rate = 0.0005  # Alpha (aka learning rate)
 
 # TRAINING HYPERPARAMETERS
 total_episodes = 1_000_000  # Total episodes for training
-max_steps = env.length  # Max possible steps in an episode
+max_steps = 1000  # Max possible steps in an episode
 # print(max_steps)
 batch_size = 64
 
@@ -74,7 +67,7 @@ if training:
     memory = Memory(memory_size)
 
     # Render the environment
-    state = env.reset()
+    state = Env.start_game()
     prev_world_score = 0
 
     for i in range(pretrain_length):
@@ -85,7 +78,7 @@ if training:
         action = random.choice([0, 1])
         # print(action)
         # Make an action within the game
-        next_state, reward, done, _ = env.step(action)
+        next_state, reward, score, done = Env.step(action)
 
         # Look if the episode is finished
         if done:
@@ -99,7 +92,7 @@ if training:
             memory.store(experience)
 
             # Start a new episode
-            state = env.reset()
+            state = Env.start_game()
             prev_world_score = 0
 
         else:
@@ -152,7 +145,7 @@ if training:
             episode_rewards = []
 
             # Make a new episode and observe the first state
-            state = env.reset()
+            state = Env.start_game()
             done = False
             prev_world_score = 0
             start = time.time()
@@ -179,7 +172,7 @@ if training:
                 # print(DQNetwork.output.eval())
 
                 # Make an action within the game
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, score, done = Env.step(action)
 
                 # Add the reward to total reward
                 episode_rewards.append(reward)
@@ -196,13 +189,10 @@ if training:
                     total_reward = np.sum(episode_rewards)
 
                     print('Episode: {}'.format(episode),
-                          'Score: {}'.format(env.net_worth),
-                          'total trades: {}'.format(len(env.trades)),
-                          'days traded: {}'.format(env.count_days_traded),
                           'Total reward: {}'.format(total_reward),
                           'Training loss: {:.4f}'.format(loss),
                           'Explore P: {:.4f}'.format(explore_probability),
-                          'Time: {:.4f}'.format((time.time() - start)))
+                          'Time (sec): {:.4f}'.format((time.time() - start)))
 
                     # Add experience to memory
                     experience = state, one_hot_actions[action], reward, next_state, done
@@ -343,14 +333,9 @@ else:
         # play for 100 games
         for i in range(100):
             # Start the game
-            Init()
-            done = False
-            score = 0
-            prev_world_score = 0
+            state = Env.start_game()
 
-            # state = np.zeros([*state_size])
-            state = DQNetwork.observe(None, True)
-            first = True
+            score = 0
             step = 0
 
             while step < max_steps:
@@ -373,41 +358,12 @@ else:
                     Qs = sess.run(DQNetwork.output, feed_dict={DQNetwork.inputs_: state.reshape((1, *state.shape))})
                     action = np.argmax(Qs)
 
-                # if step == 1:
-                #     action = 3
-                # else:
-                #     action = 1
-                # Make an action within the gameDXY
-                # if action == 3: action = 1
-                if first:
-                    action = 3
-                    first = False
+                next_state, score, reward, done = Env.step(action)
 
-                r_locs, i_locs, c_locs, turret_ang, world_score = Game_step(action)
-
-                observation = (r_locs, i_locs, c_locs, turret_ang, world_score, action)
-
-                if episode_render:
-                    Draw()
-
-                if step == max_steps:
-                    score = world_score
+                if step == max_steps or done:
                     break
 
                 else:
-                    # Get the next state
-                    # next_state = observe(observation)
-                    # next_state = DQNetwork.observe(observation)
-                    next_state = DQNetwork.observe(observation, False)
-
-                    reward = DQNetwork.calculate_reward(observation)
-                    # print(reward)
-                    # reward, prev_theta = calculate_reward(observation, prev_theta)
                     state = next_state
-
-                summary = sess.run(write_op, feed_dict={DQNetwork.inputs_: state.reshape((1, *state.shape)),
-                                                        TargetNetwork.inputs_: state.reshape((1, *state.shape))})
-                writer.add_summary(summary, i)
-                writer.flush()
 
             print("Score: ", score)
