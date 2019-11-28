@@ -16,12 +16,10 @@ learning_rate = 0.0005  # Alpha (aka learning rate)
 
 # TRAINING HYPERPARAMETERS
 total_episodes = 1_000_000  # Total episodes for training
-max_steps = 1000  # Max possible steps in an episode
-# print(max_steps)
 batch_size = 64
 
 # FIXED Q TARGETS HYPERPARAMETERS
-max_tau = 10_000  # Tau is the C step where we update our target network
+max_tau = 10_00 # Tau is the C step where we update our target network
 
 # EXPLORATION HYPERPARAMETERS for epsilon greedy strategy
 explore_start = 1.0  # exploration probability at start
@@ -33,8 +31,8 @@ gamma = 0.95  # Discounting rate
 
 # MEMORY HYPERPARAMETERS
 # If you have GPU change to 1_million
-pretrain_length = 10_000  # Number of experiences stored in the Memory when initialized for the first time
-memory_size = 10_000  # Number of experiences the Memory can keep
+pretrain_length = 10_0  # Number of experiences stored in the Memory when initialized for the first time
+memory_size = 10_0  # Number of experiences the Memory can keep
 
 # MODIFY THIS TO FALSE IF YOU JUST WANT TO SEE THE TRAINED AGENT
 training = True
@@ -75,10 +73,11 @@ if training:
         _stp = i + 1
 
         # Random action
-        action = random.choice([0, 1])
+        action = random.choice([0, 1, 2, 3])
         # print(action)
         # Make an action within the game
         next_state, reward, score, done = Env.step(action)
+        # print(next_state.shape, reward)
 
         # Look if the episode is finished
         if done:
@@ -105,6 +104,7 @@ if training:
 
             # Our state is now the next_state
             state = next_state
+            # print(state.shape)
 
     print("pre-population finished.")
 
@@ -146,12 +146,12 @@ if training:
 
             # Make a new episode and observe the first state
             state = Env.start_game()
+            # print(state)
             done = False
             prev_world_score = 0
             start = time.time()
 
-            while step < max_steps and not done:
-                step += 1
+            while not done:
 
                 # Increase the C step
                 tau += 1
@@ -173,14 +173,12 @@ if training:
 
                 # Make an action within the game
                 next_state, reward, score, done = Env.step(action)
-
+                # print(next_state, reward, score, done, action)
                 # Add the reward to total reward
                 episode_rewards.append(reward)
 
                 # If the game is finished
                 if done:
-                    step = max_steps
-
                     # We finished the episode
                     # # next_state = np.zeros([*state_size])
                     # next_state = DQNetwork.observe(None, True)
@@ -190,6 +188,7 @@ if training:
 
                     print('Episode: {}'.format(episode),
                           'Total reward: {}'.format(total_reward),
+                          'Snake Length: {}'.format(score),
                           'Training loss: {:.4f}'.format(loss),
                           'Explore P: {:.4f}'.format(explore_probability),
                           'Time (sec): {:.4f}'.format((time.time() - start)))
@@ -199,13 +198,10 @@ if training:
                     memory.store(experience)
 
                 else:
-                    # we're not finished
-                    done = False
-
                     # Add experience to memory
                     experience = state, one_hot_actions[action], reward, next_state, done
                     memory.store(experience)
-
+                    # print('state: ', state, '\nnext state: ', next_state)
                     # st+1 is now our current state
                     state = next_state
 
@@ -256,6 +252,14 @@ if training:
                 # print("tree idx: ", tree_idx)
                 # print("is weights: ", ISWeights_mb)
                 # print("target: ", targets_mb)
+
+                # print(states_mb.shape, targets_mb.shape, actions_mb.shape, ISWeights_mb.shape)
+                # print('states: ', states_mb)
+                # print('target: ', targets_mb)
+                # print('actions: ', actions_mb)
+                # print('Weights: ', ISWeights_mb)
+
+                # print("wtf")
 
                 _, loss, absolute_errors = sess.run(
                     [DQNetwork.optimizer, DQNetwork.loss, DQNetwork.absolute_errors],
@@ -335,10 +339,11 @@ else:
             # Start the game
             state = Env.start_game()
 
+            done = False
             score = 0
             step = 0
 
-            while step < max_steps:
+            while not done:
                 step += 1
 
                 # EPSILON GREEDY STRATEGY
@@ -360,7 +365,7 @@ else:
 
                 next_state, score, reward, done = Env.step(action)
 
-                if step == max_steps or done:
+                if done:
                     break
 
                 else:
