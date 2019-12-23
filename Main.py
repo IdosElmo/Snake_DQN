@@ -5,26 +5,27 @@ import time
 import Environment as Env
 from Agent import Agent, Memory, update_target_graph
 
+
 # MODEL HYPERPARAMETERS
-K = 25
+K = 20
 num_actions = 4
 
 state_size = [K, K, 1]  # Our input is a stack of 4 frames hence 100x120x4 (Width, height, channels)
 action_size = num_actions  # 4 possible actions
 one_hot_actions = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-learning_rate = 0.0005  # Alpha (aka learning rate)
+learning_rate = 0.005  # Alpha (aka learning rate)
 
 # TRAINING HYPERPARAMETERS
 total_episodes = 1_000_000  # Total episodes for training
 batch_size = 64
 
 # FIXED Q TARGETS HYPERPARAMETERS
-max_tau = 10_00 # Tau is the C step where we update our target network
+max_tau = 10_00    # Tau is the C step where we update our target network
 
 # EXPLORATION HYPERPARAMETERS for epsilon greedy strategy
 explore_start = 1.0  # exploration probability at start
 explore_stop = 0.01  # minimum exploration probability
-decay_rate = 0.000025  # exponential decay rate for exploration prob
+decay_rate = 0.0005  # exponential decay rate for exploration prob
 
 # Q LEARNING hyperparameters
 gamma = 0.95  # Discounting rate
@@ -37,7 +38,7 @@ memory_size = 10_0  # Number of experiences the Memory can keep
 # MODIFY THIS TO FALSE IF YOU JUST WANT TO SEE THE TRAINED AGENT
 training = True
 # MODIFY THIS TO TRUE IF YOU WANT TO SEE TRANING IN ACTION
-training_render = False
+training_render = True
 # TURN THIS TO TRUE IF YOU WANT TO RENDER THE ENVIRONMENT
 episode_render = True
 
@@ -63,9 +64,10 @@ if training:
 
     # Instantiate memory
     memory = Memory(memory_size)
-
+    game = Env.Game(500, 20)
     # Render the environment
-    state = Env.start_game()
+    state = np.zeros(*[state_size])
+    # state = Env.main()
     prev_world_score = 0
 
     for i in range(pretrain_length):
@@ -76,7 +78,7 @@ if training:
         action = random.choice([0, 1, 2, 3])
         # print(action)
         # Make an action within the game
-        next_state, reward, score, done = Env.step(action)
+        next_state, reward, score, done = game.step(action, training_render)
         # print(next_state.shape, reward)
 
         # Look if the episode is finished
@@ -91,7 +93,9 @@ if training:
             memory.store(experience)
 
             # Start a new episode
-            state = Env.start_game()
+            game.reset2()
+            state = np.zeros(*[state_size])
+            # state = Env.start_game()
             prev_world_score = 0
 
         else:
@@ -145,7 +149,9 @@ if training:
             episode_rewards = []
 
             # Make a new episode and observe the first state
-            state = Env.start_game()
+            # state = Env.start_game()
+            game.reset2()
+            state = np.zeros(*[state_size])
             # print(state)
             done = False
             prev_world_score = 0
@@ -164,6 +170,8 @@ if training:
                                                                     explore_stop, decay_rate,
                                                                     decay_step, state, sess)
 
+                # print(state)
+
                 # image = tf.reshape(state, [-1, *state_size])
                 # # # print(image.shape)
                 # tf.compat.v1.summary.image('input', image, 3)
@@ -172,7 +180,7 @@ if training:
                 # print(DQNetwork.output.eval())
 
                 # Make an action within the game
-                next_state, reward, score, done = Env.step(action)
+                next_state, reward, score, done = game.step(action, training_render)
                 # print(next_state, reward, score, done, action)
                 # Add the reward to total reward
                 episode_rewards.append(reward)
@@ -337,8 +345,9 @@ else:
         # play for 100 games
         for i in range(100):
             # Start the game
-            state = Env.start_game()
-
+            # state = Env.start_game()
+            game = Env.Game(500, 20)
+            state = np.zeros(*[state_size])
             done = False
             score = 0
             step = 0
@@ -363,7 +372,7 @@ else:
                     Qs = sess.run(DQNetwork.output, feed_dict={DQNetwork.inputs_: state.reshape((1, *state.shape))})
                     action = np.argmax(Qs)
 
-                next_state, score, reward, done = Env.step(action)
+                next_state, score, reward, done = game.step(action)
 
                 if done:
                     break
