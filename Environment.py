@@ -6,6 +6,9 @@ import numpy as np
 import sys
 import pygame
 import tkinter as tk
+from collections import deque
+import tensorflow as tf
+from skimage.transform import rescale, resize, downscale_local_mean
 from tkinter import messagebox
 
 
@@ -212,37 +215,56 @@ def randomSnack(rows, item):
 
     return (x, y)
 
-
-def message_box(subject, content):
-    root = tk.Tk()
-    root.attributes("-topmost", True)
-    root.withdraw()
-    messagebox.showinfo(subject, content)
-    try:
-        root.destroy()
-    except:
-        pass
-
-
 class Game:
     width = 500
     prev_dis = 0
     rows = 20
+    render = True
+    dt = 0
 
-    def __init__(self, width=500, rows=20):
+    def __init__(self, width=500, rows=20, render=True):
         # global width, rows, s, snack, win
+        self.dt = 0
+        self.render = render
         self.width = width
         self.rows = rows
         self.win = pygame.display.set_mode((width, width))
         self.s = snake((255, 0, 0), (10, 10))
         self.snack = cube(randomSnack(self.rows, self.s), color=(0, 255, 0))
         self.prev_dis = rows
+        self.stacked_frame = deque([np.zeros([self.rows, self.rows]) for i in range(4)], maxlen=4)
+
+    def stack_frames(self, state, is_new):
+        if is_new:
+            self.stacked_frame = deque([np.zeros([self.rows, self.rows]) for i in range(4)], maxlen=4)
+
+            # s_frames.append(state)
+            # s_frames.append(state)
+            # s_frames.append(state)
+            # s_frames.append(state)
+
+            stack = np.stack(self.stacked_frame, axis=2)
+            # print(stack)
+        else:
+
+            state = rescale(state, 0.04, anti_aliasing=False)
+            state = (state - np.mean(state)) / np.std(state)
+
+            self.stacked_frame.append(np.array(state))
+
+            # print(self.stacked_frame)
+
+            stack = np.stack(self.stacked_frame, axis=2)
+            # print(stack)
+
+        # print(stack.shape)
+        return stack
 
     def redrawWindow(self, surface):
         surface.fill((0, 0, 0))
         self.s.draw(surface)
         self.snack.draw(surface)
-        drawGrid(self.width, self.rows, surface)
+        # drawGrid(self.width, self.rows, surface)
         pygame.display.update()
 
     def reset2(self):
@@ -253,6 +275,7 @@ class Game:
         self.s = snake((255, 0, 0), (10, 10))
         self.snack = cube(randomSnack(self.rows, self.s), color=(0, 255, 0))
 
+        self.dt = 0
         self.s.done = False
         self.s.head = cube((10, 10))
         self.s.body = []
@@ -264,6 +287,11 @@ class Game:
     def calculate_reward(self, head, apple, prev_d):
         # print(head, apple)
 
+        reward = -0.05
+
+        if np.mod(self.dt, 2) == 0:
+            reward = -1.0
+
         snake_x = head[0]
         snake_y = head[1]
 
@@ -272,46 +300,47 @@ class Game:
 
         distance = ((snake_x - apple_x) ** 2 + (snake_y - apple_y) ** 2) ** 0.5
 
+        # if distance <= self.prev_dis:
+        #
+        #     if distance == 0: distance = 0.01
+        #
+        #     distance /= (self.rows ** 2) ** 0.5
+        #
+        #     reward = 1 / distance
+
         self.prev_dis = distance
-
-        if distance == 0: distance = 1
-
-        if distance < prev_d:
-            reward = 1 / distance
-
-        else:
-            reward = 0
+        # print(reward)
 
         return reward
 
     def step(self, action, render=False):
+        self.dt += 0.2
         clock = pygame.time.Clock()
         self.s.done = False
-        pygame.time.delay(50)
-        clock.tick(30)
+        pygame.time.delay(5)
+        clock.tick(300)
         self.s.move(action)
 
         reward = 0
 
-        if self.s.body[0].pos == self.snack.pos:
-            self.s.addCube()
-            reward = 1 * len(self.s.body)
-            self.snack = cube(randomSnack(self.rows, self.s), color=(0, 255, 0))
-
-        # x2 = pygame.surfarray.array3d(self.win)
-
-        state = np.zeros((self.rows, self.rows))
-
-        for i in self.s.body:
-            # print(i.pos)
-            x = i.pos[0]
-            y = i.pos[1]
-            state[x][y] = 1
-
-        state[self.snack.pos[0]][self.snack.pos[1]] = 1
+        # state = np.zeros((self.rows, self.rows))
+        #
+        # for i in self.s.body:
+        #     # print(i.pos)
+        #     x = i.pos[0]
+        #     y = i.pos[1]
+        #     state[x][y] = 1
+        #
+        # state[self.snack.pos[0]][self.snack.pos[1]] = 1
 
         # print(s.head.pos)
-        # reward = self.calculate_reward(self.s.head.pos, self.snack.pos, self.prev_dis)
+        reward = self.calculate_reward(self.s.head.pos, self.snack.pos, self.prev_dis)
+
+        if self.s.body[0].pos == self.snack.pos:
+            self.s.addCube()
+            # reward = 1 * len(self.s.body)
+            reward = 10
+            self.snack = cube(randomSnack(self.rows, self.s), color=(0, 255, 0))
 
         for x in range(len(self.s.body)):
             if self.s.hit_wall or self.s.body[x].pos in list(map(lambda z: z.pos, self.s.body[x + 1:])):
@@ -321,7 +350,10 @@ class Game:
                 reward = -1
                 break
 
-        self.redrawWindow(self.win)
+        if render:
+            self.redrawWindow(self.win)
+        else:
+            pygame.display.update()
         # if render:
         #     win.fill((0, 0, 0))
         #     s.draw(win)
@@ -329,9 +361,23 @@ class Game:
         #     drawGrid(width, rows, win)
         #     pygame.display.update()
 
-        score = len(self.s.body)
-        return state.reshape((self.rows, self.rows, 1)), reward, score, self.s.done
+        # x2 = pygame.surfarray.array3d(self.win)
 
+        x3 = pygame.surfarray.array2d(self.win)
+
+        # for i in x3:
+        #     print(i)
+
+        # print(x2.shape)
+
+        state = self.stack_frames(x3, False)
+
+        score = len(self.s.body)
+
+        # reward = self.calculate_reward(self.s.head.pos, self.snack.pos, self.prev_dis)
+
+        return state, reward, score, self.s.done
+# state.reshape((self.rows, self.rows, 1))
 
 # main()
 #
@@ -348,4 +394,3 @@ class Game:
 #         # run = False
 #
 # print("episode finished")
-
