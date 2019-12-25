@@ -6,6 +6,22 @@ import sys
 from collections import deque
 
 
+class Memory2(object):
+    def __init__(self, max_size):
+        self.buffer = deque(maxlen=max_size)
+
+    def add(self, experience):
+        self.buffer.append(experience)
+
+    def sample(self, batch_size):
+        buffer_size = len(self.buffer)
+        index = np.random.choice(np.arange(buffer_size),
+                                 size=batch_size,
+                                 replace=False)
+
+        return [self.buffer[i] for i in index]
+
+
 class Memory(object):  # stored as ( s, a, r, s_ ) in SumTree
     """
     This SumTree code is modified version and the original code is from:
@@ -88,6 +104,8 @@ class Memory(object):  # stored as ( s, a, r, s_ ) in SumTree
             b_ISWeights[i, 0] = np.power(n * sampling_probabilities, -self.PER_b) / max_weight
 
             b_idx[i] = index
+
+            # print(data)
 
             experience = [data]
 
@@ -194,6 +212,8 @@ class Agent:
             # Remember that target_Q is the R(s,a) + ymax Qhat(s', a')
             self.target_Q = tf.compat.v1.placeholder(tf.float32, [None], name="target")
 
+            # print(self.inputs_, self.ISWeights_, self.actions_, self.target_Q)
+
             """
             First convnet:
             CNN
@@ -201,8 +221,8 @@ class Agent:
             """
             self.conv1 = tf.layers.conv2d(inputs=self.inputs_,
                                           filters=32,
-                                          kernel_size=[4, 4],
-                                          strides=[2, 2],
+                                          kernel_size=[2, 2],
+                                          strides=[1, 1],
                                           padding="VALID",
                                           kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
                                           name="conv1")
@@ -216,36 +236,36 @@ class Agent:
             """
             self.conv2 = tf.layers.conv2d(inputs=self.conv1_out,
                                           filters=64,
-                                          kernel_size=[2, 2],
-                                          strides=[2, 2],
+                                          kernel_size=[4, 4],
+                                          strides=[1, 1],
                                           padding="VALID",
                                           kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
                                           name="conv2")
 
             self.conv2_out = tf.nn.elu(self.conv2, name="conv2_out")
 
-            """
-            Third convnet:
-            CNN
-            ELU
-            """
-            self.conv3 = tf.layers.conv2d(inputs=self.conv2_out,
-                                          filters=128,
-                                          kernel_size=[1, 1],
-                                          strides=[1, 1],
-                                          padding="VALID",
-                                          kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-                                          name="conv3")
+            # """
+            # Third convnet:
+            # CNN
+            # ELU
+            # """
+            # self.conv3 = tf.layers.conv2d(inputs=self.conv2_out,
+            #                               filters=128,
+            #                               kernel_size=[2, 2],
+            #                               strides=[1, 1],
+            #                               padding="VALID",
+            #                               kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
+            #                               name="conv3")
+            #
+            # self.conv3_out = tf.nn.elu(self.conv3, name="conv3_out")
 
-            self.conv3_out = tf.nn.elu(self.conv3, name="conv3_out")
-
-            self.flatten = tf.layers.flatten(self.conv3_out)
+            self.flatten = tf.layers.flatten(self.conv2_out)
 
             # Here we separate into two streams
             # The one that calculate V(s)
             self.value_fc = tf.layers.dense(inputs=self.flatten,
-                                            units=512,
-                                            activation=tf.nn.elu,
+                                            units=64,
+                                            activation=tf.nn.relu,
                                             kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                             name="value_fc")
             # with tf.variable_scope('value_fc', reuse=tf.AUTO_REUSE):
@@ -259,8 +279,8 @@ class Agent:
 
             # The one that calculate A(s,a)
             self.advantage_fc = tf.layers.dense(inputs=self.flatten,
-                                                units=512,
-                                                activation=tf.nn.elu,
+                                                units=64,
+                                                activation=tf.nn.relu,
                                                 kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                                 name="advantage_fc")
 
@@ -275,25 +295,25 @@ class Agent:
             self.output = self.value + tf.subtract(self.advantage,
                                                    tf.reduce_mean(self.advantage, axis=1, keepdims=True))
 
+            # # Q is our predicted Q value.
+            # self.Q = tf.reduce_sum(tf.multiply(self.output, self.actions_), axis=1)
+            #
+            # # The loss is modified because of PER
+            # self.absolute_errors = tf.abs(self.target_Q - self.Q)  # for updating Sumtree
+            #
+            # self.loss = tf.reduce_mean(self.ISWeights_ * tf.math.squared_difference(self.target_Q, self.Q))
+            #
+            # # self.optimizer = tf.compat.v1.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
+            # self.optimizer = tf.compat.v1.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss)
+
             # Q is our predicted Q value.
             self.Q = tf.reduce_sum(tf.multiply(self.output, self.actions_), axis=1)
 
-            # The loss is modified because of PER
-            self.absolute_errors = tf.abs(self.target_Q - self.Q)  # for updating Sumtree
+            # The loss is the difference between our predicted Q_values and the Q_target
+            # Sum(Qtarget - Q)^2
+            self.loss = tf.reduce_mean(tf.square(self.target_Q - self.Q))
 
-            self.loss = tf.reduce_mean(self.ISWeights_ * tf.math.squared_difference(self.target_Q, self.Q))
-
-            self.optimizer = tf.compat.v1.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
-            # self.optimizer = tf.compat.v1.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss)
-
-            # d2_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
-            # # print(d2_vars[0])
-            # tf.summary.histogram("weights", d2_vars[0])
-            # tf.summary.histogram("biases", d2_vars[1])
-
-            # for var in tf.trainable_variables():
-            #     # print(var.eval())
-            #     tf.compat.v1.summary.histogram(var.name, var.eval())
+            self.optimizer = tf.compat.v1.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss)
 
     def predict_action(self, explore_start, explore_stop, decay_rate, decay_step, state, sess):
         """
