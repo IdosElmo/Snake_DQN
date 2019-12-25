@@ -2,22 +2,22 @@ import tensorflow as tf
 import random
 import numpy as np
 import time
-import Environment as Env
-from Agent import Agent, Memory, update_target_graph
+import snake_test as Env
+from Agent import Agent, Memory, update_target_graph, Memory2
 
 
 # MODEL HYPERPARAMETERS
 K = 20
 num_actions = 4
 
-state_size = [K, K, 1]  # Our input is a stack of 4 frames hence 100x120x4 (Width, height, channels)
+state_size = [K, K, 4]  # Our input is a stack of 4 frames hence 100x120x4 (Width, height, channels)
 action_size = num_actions  # 4 possible actions
 one_hot_actions = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
 learning_rate = 0.005  # Alpha (aka learning rate)
 
 # TRAINING HYPERPARAMETERS
 total_episodes = 1_000_000  # Total episodes for training
-batch_size = 64
+batch_size = 16
 
 # FIXED Q TARGETS HYPERPARAMETERS
 max_tau = 10_00    # Tau is the C step where we update our target network
@@ -64,9 +64,11 @@ if training:
 
     # Instantiate memory
     memory = Memory(memory_size)
+    memory2 = Memory2(memory_size)
+
     game = Env.Game(500, 20)
     # Render the environment
-    state = np.zeros(*[state_size])
+    state = game.stack_frames([], True)
     # state = Env.main()
     prev_world_score = 0
 
@@ -91,10 +93,11 @@ if training:
             # Add experience to memory
             experience = state, one_hot_actions[action], reward, next_state, done
             memory.store(experience)
+            memory2.add(experience)
 
             # Start a new episode
             game.reset2()
-            state = np.zeros(*[state_size])
+            state = game.stack_frames([], True)
             # state = Env.start_game()
             prev_world_score = 0
 
@@ -105,6 +108,7 @@ if training:
             # print(reward)
             experience = state, one_hot_actions[action], reward, next_state, done
             memory.store(experience)
+            memory2.add(experience)
 
             # Our state is now the next_state
             state = next_state
@@ -151,7 +155,7 @@ if training:
             # Make a new episode and observe the first state
             # state = Env.start_game()
             game.reset2()
-            state = np.zeros(*[state_size])
+            state = game.stack_frames([], True)
             # print(state)
             done = False
             prev_world_score = 0
@@ -204,11 +208,13 @@ if training:
                     # Add experience to memory
                     experience = state, one_hot_actions[action], reward, next_state, done
                     memory.store(experience)
+                    memory2.add(experience)
 
                 else:
                     # Add experience to memory
                     experience = state, one_hot_actions[action], reward, next_state, done
                     memory.store(experience)
+                    memory2.add(experience)
                     # print('state: ', state, '\nnext state: ', next_state)
                     # st+1 is now our current state
                     state = next_state
@@ -217,11 +223,22 @@ if training:
                 # Obtain random mini-batch from memory
                 tree_idx, batch, ISWeights_mb = memory.sample(batch_size)
 
-                states_mb = np.array([each[0][0] for each in batch], ndmin=3)
-                actions_mb = np.array([each[0][1] for each in batch])
-                rewards_mb = np.array([each[0][2] for each in batch])
-                next_states_mb = np.array([each[0][3] for each in batch], ndmin=3)
-                dones_mb = np.array([each[0][4] for each in batch])
+
+                #
+                # states_mb = np.array([each[0][0] for each in batch], ndmin=3)
+                # actions_mb = np.array([each[0][1] for each in batch])
+                # rewards_mb = np.array([each[0][2] for each in batch])
+                # next_states_mb = np.array([each[0][3] for each in batch], ndmin=3)
+                # dones_mb = np.array([each[0][4] for each in batch])
+
+                ### LEARNING PART
+                # Obtain random mini-batch from memory
+                batch = memory2.sample(batch_size)
+                states_mb = np.array([each[0] for each in batch], ndmin=3)
+                actions_mb = np.array([each[1] for each in batch])
+                rewards_mb = np.array([each[2] for each in batch])
+                next_states_mb = np.array([each[3] for each in batch], ndmin=3)
+                dones_mb = np.array([each[4] for each in batch])
 
                 # print(actions_mb)
                 # print(rewards_mb)
@@ -269,15 +286,15 @@ if training:
 
                 # print("wtf")
 
-                _, loss, absolute_errors = sess.run(
-                    [DQNetwork.optimizer, DQNetwork.loss, DQNetwork.absolute_errors],
+                _, loss = sess.run(
+                    [DQNetwork.optimizer, DQNetwork.loss],
                     feed_dict={DQNetwork.inputs_: states_mb,
                                DQNetwork.target_Q: targets_mb,
                                DQNetwork.actions_: actions_mb,
                                DQNetwork.ISWeights_: ISWeights_mb})
 
                 # Update priority
-                memory.batch_update(tree_idx, absolute_errors)
+                # memory.batch_update(tree_idx, absolute_errors)
                 # print(states_mb.shape)
                 # Write TF Summaries
                 summary = sess.run(write_op, feed_dict={DQNetwork.inputs_: states_mb,
@@ -347,7 +364,7 @@ else:
             # Start the game
             # state = Env.start_game()
             game = Env.Game(500, 20)
-            state = np.zeros(*[state_size])
+            state = game.stack_frames([], True)
             done = False
             score = 0
             step = 0
